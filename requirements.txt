@@ -1,6 +1,8 @@
 # --- Core ML / Deep Learning ---
-torch
-torchvision
+# --- Core ML / Deep Learning ---
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch==2.13.0+cu130
+torchvision==0.28.0+cu130
 ultralytics          # YOLOv8 detection
 
 # --- Image / Video Processing ---
