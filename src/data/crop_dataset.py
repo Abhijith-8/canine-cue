@@ -88,7 +88,7 @@ def main():
     parser.add_argument("--conf_thresh", type=float, default=0.25, help="Min YOLO confidence to accept a dog detection")
     parser.add_argument("--model_path", default=None, help="Optional path to custom YOLO weights (defaults to yolov8n.pt inside DogDetector)")
     args = parser.parse_args()
-
+    
     input_root = Path(args.input_dir).resolve()
     output_root = Path(args.output_dir).resolve()
 
