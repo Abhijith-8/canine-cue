@@ -14,17 +14,33 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, models
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+import argparse
 
 # ---------------------------------------------------------------------------
 # Make src/ importable if this script needs sibling modules later
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# CLI args
+parser = argparse.ArgumentParser()
+parser.add_argument("--data_dir", type=str, required=True,
+                     help="Path to processed_cropped-style folder with train/val/test subfolders")
+parser.add_argument("--output_name", type=str, default="resnet18_calm_aggressive_best",
+                     help="Checkpoint filename (without .pt)")
+args = parser.parse_args()
+
+# ---------------------------------------------------------------------------
 # Config
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "processed_cropped"
+DATA_DIR = Path(args.data_dir)
 CHECKPOINT_DIR = Path(__file__).resolve().parent.parent.parent / "checkpoints"
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-BEST_MODEL_PATH = CHECKPOINT_DIR / "resnet18_calm_aggressive_best.pt"
+BEST_MODEL_PATH = CHECKPOINT_DIR / f"{args.output_name}.pt"
+
+
+
+
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
