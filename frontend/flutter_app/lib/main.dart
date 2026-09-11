@@ -233,8 +233,9 @@ class _HomePageState extends State<HomePage> {
         _isLoading = false;
       });
 
+      // Show the real error so we can identify the problem.
       _showError(
-        'Could not analyze the video.',
+        'Video error: $e',
       );
     }
   }
@@ -575,6 +576,7 @@ class _HomePageState extends State<HomePage> {
                                 ElevatedButton.styleFrom(
                               backgroundColor:
                                   Colors.indigo,
+
                               foregroundColor:
                                   Colors.white,
 
