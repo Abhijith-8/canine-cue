@@ -1,11 +1,118 @@
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const CanineCueApp());
+}
+
+class OnDeviceDogDetector {
+  final OnnxRuntime _ort = OnnxRuntime();
+  OrtSession? _session;
+
+  Future<void> initialize() async {
+    if (_session != null) return;
+    _session = await _ort.createSessionFromAsset(
+      'assets/caninecue_resnet18.onnx',
+    );
+  }
+
+  Future<Map<String, dynamic>> predict(Uint8List imageBytes) async {
+    await initialize();
+
+    final image = img.decodeImage(imageBytes);
+    if (image == null) {
+      throw Exception('Could not decode image.');
+    }
+
+    final resized = img.copyResize(
+      image,
+      width: 224,
+      height: 224,
+    );
+
+    final input = Float32List(1 * 3 * 224 * 224);
+    const mean = [0.485, 0.456, 0.406];
+    const std = [0.229, 0.224, 0.225];
+
+    int index = 0;
+
+    for (int channel = 0; channel < 3; channel++) {
+      for (int y = 0; y < 224; y++) {
+        for (int x = 0; x < 224; x++) {
+          final pixel = resized.getPixel(x, y);
+          double value;
+
+          if (channel == 0) {
+            value = pixel.r.toDouble();
+          } else if (channel == 1) {
+            value = pixel.g.toDouble();
+          } else {
+            value = pixel.b.toDouble();
+          }
+
+          input[index++] =
+              (value / 255.0 - mean[channel]) / std[channel];
+        }
+      }
+    }
+
+    final inputValue = await OrtValue.fromList(
+      input,
+      [1, 3, 224, 224],
+    );
+
+    try {
+      final session = _session!;
+      final outputs = await session.run({
+        session.inputNames.first: inputValue,
+      });
+
+      final outputValue = outputs[session.outputNames.first];
+      if (outputValue == null) {
+        throw Exception('ONNX model returned no output.');
+      }
+
+      final output = await outputValue.asList();
+      final logit = _extractLogit(output);
+      final probability = 1.0 / (1.0 + exp(-logit));
+      final isAggressive = probability >= 0.5;
+      final confidence = isAggressive ? probability : 1.0 - probability;
+
+      outputValue.dispose();
+
+      return {
+        'prediction': isAggressive ? 'AGGRESSIVE' : 'CALM',
+        'confidence': confidence,
+        'prob_aggressive': probability,
+      };
+    } finally {
+      inputValue.dispose();
+    }
+  }
+
+  double _extractLogit(dynamic output) {
+    dynamic value = output;
+    while (value is List && value.isNotEmpty) {
+      value = value[0];
+    }
+    if (value is num) {
+      return value.toDouble();
+    }
+    throw Exception('Unexpected ONNX output format.');
+  }
+
+  Future<void> dispose() async {
+    await _session?.close();
+    _session = null;
+  }
 }
 
 class CanineCueApp extends StatelessWidget {
@@ -37,9 +144,25 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
+  final OnDeviceDogDetector _detector = OnDeviceDogDetector();
 
-  // Android phone uses adb reverse.
+  // Video detection still uses the existing backend until local video
+  // frame extraction is added. Photo detection is fully on-device.
   static const String backendUrl = 'http://127.0.0.1:8000';
+
+  @override
+  void initState() {
+    super.initState();
+    _detector.initialize().catchError((error) {
+      debugPrint('ONNX initialization error: $error');
+    });
+  }
+
+  @override
+  void dispose() {
+    _detector.dispose();
+    super.dispose();
+  }
 
   bool _isLoading = false;
 
@@ -165,69 +288,31 @@ class _HomePageState extends State<HomePage> {
         imageQuality: 90,
       );
 
-      if (image == null) {
-        return;
-      }
+      if (image == null) return;
 
       setState(() {
         _selectedImageName = image.name;
         _selectedVideoName = null;
-
         _resetResult();
-
         _isLoading = true;
       });
 
       final bytes = await image.readAsBytes();
+      final data = await _detector.predict(bytes);
 
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$backendUrl/scan'),
-      );
-
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: image.name,
-        ),
-      );
-
-      final response = await request.send();
-
-      final responseBody =
-          await response.stream.bytesToString();
-
-      if (response.statusCode != 200) {
-        throw Exception(responseBody);
-      }
-
-      final data = jsonDecode(responseBody);
-
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
-        _prediction = data['prediction'];
-
-        _confidence =
-            (data['confidence'] as num).toDouble();
-
+        _prediction = data['prediction'] as String;
+        _confidence = (data['confidence'] as num).toDouble();
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
-
-      _showError(
-        'Camera error: $e',
-      );
+      _showError('Camera detection error: $e');
     }
   }
 
@@ -278,7 +363,7 @@ class _HomePageState extends State<HomePage> {
         throw Exception(responseBody);
       }
 
-      final data = jsonDecode(responseBody);
+      final data = json.decode(responseBody);
 
       if (!mounted) {
         return;
@@ -334,69 +419,31 @@ class _HomePageState extends State<HomePage> {
         source: ImageSource.gallery,
       );
 
-      if (image == null) {
-        return;
-      }
+      if (image == null) return;
 
       setState(() {
         _selectedImageName = image.name;
         _selectedVideoName = null;
-
         _resetResult();
-
         _isLoading = true;
       });
 
       final bytes = await image.readAsBytes();
+      final data = await _detector.predict(bytes);
 
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$backendUrl/scan'),
-      );
-
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: image.name,
-        ),
-      );
-
-      final response = await request.send();
-
-      final responseBody =
-          await response.stream.bytesToString();
-
-      if (response.statusCode != 200) {
-        throw Exception(responseBody);
-      }
-
-      final data = jsonDecode(responseBody);
-
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
-        _prediction = data['prediction'];
-
-        _confidence =
-            (data['confidence'] as num).toDouble();
-
+        _prediction = data['prediction'] as String;
+        _confidence = (data['confidence'] as num).toDouble();
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
-
-      _showError(
-        'Image error: $e',
-      );
+      _showError('Image detection error: $e');
     }
   }
 
@@ -447,7 +494,7 @@ class _HomePageState extends State<HomePage> {
         throw Exception(responseBody);
       }
 
-      final data = jsonDecode(responseBody);
+      final data = json.decode(responseBody);
 
       if (!mounted) {
         return;
