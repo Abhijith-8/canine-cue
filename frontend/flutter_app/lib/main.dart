@@ -38,7 +38,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
 
-  // Backend address
+  // Android phone uses adb reverse.
   static const String backendUrl = 'http://127.0.0.1:8000';
 
   bool _isLoading = false;
@@ -57,13 +57,112 @@ class _HomePageState extends State<HomePage> {
   double? _durationSeconds;
 
   // =========================================================
-  // IMAGE UPLOAD AND DETECTION
+  // RESET RESULT
   // =========================================================
 
-  Future<void> _pickImage() async {
+  void _resetResult() {
+    _prediction = null;
+    _confidence = null;
+
+    _aggressiveFrames = null;
+    _calmFrames = null;
+    _analyzedFrames = null;
+
+    _aggressivePercentage = null;
+    _durationSeconds = null;
+  }
+
+  // =========================================================
+  // CAMERA OPTIONS
+  // =========================================================
+
+  Future<void> _showCameraOptions() async {
+    if (_isLoading) {
+      return;
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(20),
+        ),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Camera Detection',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // TAKE PHOTO
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _takePhoto();
+                    },
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text(
+                      'Take Photo',
+                      style: TextStyle(
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // RECORD VIDEO
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _recordVideo();
+                    },
+                    icon: const Icon(Icons.videocam),
+                    label: const Text(
+                      'Record Video',
+                      style: TextStyle(
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // =========================================================
+  // TAKE PHOTO USING PHONE CAMERA
+  // =========================================================
+
+  Future<void> _takePhoto() async {
     try {
       final XFile? image = await _picker.pickImage(
-        source: ImageSource.gallery,
+        source: ImageSource.camera,
+        imageQuality: 90,
       );
 
       if (image == null) {
@@ -74,14 +173,7 @@ class _HomePageState extends State<HomePage> {
         _selectedImageName = image.name;
         _selectedVideoName = null;
 
-        _prediction = null;
-        _confidence = null;
-
-        _aggressiveFrames = null;
-        _calmFrames = null;
-        _analyzedFrames = null;
-        _aggressivePercentage = null;
-        _durationSeconds = null;
+        _resetResult();
 
         _isLoading = true;
       });
@@ -134,19 +226,19 @@ class _HomePageState extends State<HomePage> {
       });
 
       _showError(
-        'Could not connect to the AI server.',
+        'Camera error: $e',
       );
     }
   }
 
   // =========================================================
-  // VIDEO UPLOAD AND DETECTION
+  // RECORD VIDEO USING PHONE CAMERA
   // =========================================================
 
-  Future<void> _pickVideo() async {
+  Future<void> _recordVideo() async {
     try {
       final XFile? video = await _picker.pickVideo(
-        source: ImageSource.gallery,
+        source: ImageSource.camera,
       );
 
       if (video == null) {
@@ -157,14 +249,7 @@ class _HomePageState extends State<HomePage> {
         _selectedVideoName = video.name;
         _selectedImageName = null;
 
-        _prediction = null;
-        _confidence = null;
-
-        _aggressiveFrames = null;
-        _calmFrames = null;
-        _analyzedFrames = null;
-        _aggressivePercentage = null;
-        _durationSeconds = null;
+        _resetResult();
 
         _isLoading = true;
       });
@@ -233,7 +318,175 @@ class _HomePageState extends State<HomePage> {
         _isLoading = false;
       });
 
-      // Show the real error so we can identify the problem.
+      _showError(
+        'Video camera error: $e',
+      );
+    }
+  }
+
+  // =========================================================
+  // UPLOAD IMAGE FROM GALLERY
+  // =========================================================
+
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+      );
+
+      if (image == null) {
+        return;
+      }
+
+      setState(() {
+        _selectedImageName = image.name;
+        _selectedVideoName = null;
+
+        _resetResult();
+
+        _isLoading = true;
+      });
+
+      final bytes = await image.readAsBytes();
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$backendUrl/scan'),
+      );
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: image.name,
+        ),
+      );
+
+      final response = await request.send();
+
+      final responseBody =
+          await response.stream.bytesToString();
+
+      if (response.statusCode != 200) {
+        throw Exception(responseBody);
+      }
+
+      final data = jsonDecode(responseBody);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _prediction = data['prediction'];
+
+        _confidence =
+            (data['confidence'] as num).toDouble();
+
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      _showError(
+        'Image error: $e',
+      );
+    }
+  }
+
+  // =========================================================
+  // UPLOAD VIDEO FROM GALLERY
+  // =========================================================
+
+  Future<void> _pickVideo() async {
+    try {
+      final XFile? video = await _picker.pickVideo(
+        source: ImageSource.gallery,
+      );
+
+      if (video == null) {
+        return;
+      }
+
+      setState(() {
+        _selectedVideoName = video.name;
+        _selectedImageName = null;
+
+        _resetResult();
+
+        _isLoading = true;
+      });
+
+      final bytes = await video.readAsBytes();
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$backendUrl/scan/video'),
+      );
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: video.name,
+        ),
+      );
+
+      final response = await request.send();
+
+      final responseBody =
+          await response.stream.bytesToString();
+
+      if (response.statusCode != 200) {
+        throw Exception(responseBody);
+      }
+
+      final data = jsonDecode(responseBody);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _prediction = data['prediction'];
+
+        _confidence =
+            (data['confidence'] as num).toDouble();
+
+        _aggressiveFrames =
+            (data['aggressive_frames'] as num).toInt();
+
+        _calmFrames =
+            (data['calm_frames'] as num).toInt();
+
+        _analyzedFrames =
+            (data['analyzed_frames'] as num).toInt();
+
+        _aggressivePercentage =
+            (data['aggressive_percentage'] as num)
+                .toDouble();
+
+        _durationSeconds =
+            (data['duration_seconds'] as num)
+                .toDouble();
+
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+
       _showError(
         'Video error: $e',
       );
@@ -248,6 +501,7 @@ class _HomePageState extends State<HomePage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
+        duration: const Duration(seconds: 5),
       ),
     );
   }
@@ -268,7 +522,9 @@ class _HomePageState extends State<HomePage> {
         child: const Column(
           children: [
             CircularProgressIndicator(),
+
             SizedBox(height: 20),
+
             Text(
               'Analyzing...',
               style: TextStyle(
@@ -276,7 +532,9 @@ class _HomePageState extends State<HomePage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             SizedBox(height: 8),
+
             Text(
               'Please wait while CanineCue analyzes the input.',
               textAlign: TextAlign.center,
@@ -294,7 +552,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     final bool aggressive =
-        _prediction == 'aggressive';
+        _prediction!.toLowerCase() == 'aggressive';
 
     return Container(
       width: double.infinity,
@@ -325,7 +583,9 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 12),
 
           Text(
-            aggressive ? 'AGGRESSIVE' : 'CALM',
+            aggressive
+                ? 'AGGRESSIVE'
+                : 'CALM',
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -345,10 +605,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
 
-          // -------------------------------------------------
-          // Video information
-          // -------------------------------------------------
-
+          // VIDEO INFORMATION
           if (_selectedVideoName != null) ...[
             const SizedBox(height: 20),
 
@@ -400,11 +657,8 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
-
-      // -----------------------------------------------------
-      // APP BAR
-      // -----------------------------------------------------
+      backgroundColor:
+          const Color(0xFFF5F7FB),
 
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -417,7 +671,9 @@ class _HomePageState extends State<HomePage> {
               color: Colors.indigo,
               size: 30,
             ),
+
             SizedBox(width: 10),
+
             Text(
               'CanineCue',
               style: TextStyle(
@@ -429,28 +685,28 @@ class _HomePageState extends State<HomePage> {
         ),
 
         actions: [
-          TextButton(
-            onPressed: () {},
-            child: const Text('Home'),
-          ),
+          if (MediaQuery.of(context).size.width > 700)
+            TextButton(
+              onPressed: () {},
+              child: const Text('Home'),
+            ),
 
-          TextButton(
-            onPressed: () {},
-            child: const Text('History'),
-          ),
+          if (MediaQuery.of(context).size.width > 700)
+            TextButton(
+              onPressed: () {},
+              child: const Text('History'),
+            ),
 
-          TextButton(
-            onPressed: () {},
-            child: const Text('About'),
-          ),
+          if (MediaQuery.of(context).size.width > 700)
+            TextButton(
+              onPressed: () {},
+              child: const Text('About'),
+            ),
 
-          const SizedBox(width: 15),
+          if (MediaQuery.of(context).size.width > 700)
+            const SizedBox(width: 15),
         ],
       ),
-
-      // -----------------------------------------------------
-      // BODY
-      // -----------------------------------------------------
 
       body: SingleChildScrollView(
         child: Center(
@@ -497,7 +753,6 @@ class _HomePageState extends State<HomePage> {
 
                   Container(
                     width: double.infinity,
-
                     padding: const EdgeInsets.all(30),
 
                     decoration: BoxDecoration(
@@ -509,8 +764,8 @@ class _HomePageState extends State<HomePage> {
                         BoxShadow(
                           blurRadius: 15,
                           spreadRadius: 2,
-                          color:
-                              Colors.black.withOpacity(0.06),
+                          color: Colors.black
+                              .withOpacity(0.06),
                         ),
                       ],
                     ),
@@ -529,7 +784,8 @@ class _HomePageState extends State<HomePage> {
                           'Start Detection',
                           style: TextStyle(
                             fontSize: 26,
-                            fontWeight: FontWeight.bold,
+                            fontWeight:
+                                FontWeight.bold,
                           ),
                         ),
 
@@ -538,7 +794,8 @@ class _HomePageState extends State<HomePage> {
                         const Text(
                           'Choose an option below to analyze '
                           'dog behavior.',
-                          textAlign: TextAlign.center,
+                          textAlign:
+                              TextAlign.center,
                           style: TextStyle(
                             fontSize: 15,
                             color: Colors.grey,
@@ -548,14 +805,62 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 30),
 
                         // =================================================
-                        // UPLOAD IMAGE BUTTON
+                        // CAMERA DETECTION
                         // =================================================
 
                         SizedBox(
                           width: 260,
                           height: 55,
 
-                          child: ElevatedButton.icon(
+                          child:
+                              ElevatedButton.icon(
+                            onPressed:
+                                _isLoading
+                                    ? null
+                                    : _showCameraOptions,
+
+                            icon: const Icon(
+                              Icons.camera_alt,
+                            ),
+
+                            label: const Text(
+                              'Camera Detection',
+                              style: TextStyle(
+                                fontSize: 16,
+                              ),
+                            ),
+
+                            style:
+                                ElevatedButton
+                                    .styleFrom(
+                              backgroundColor:
+                                  Colors.indigo,
+
+                              foregroundColor:
+                                  Colors.white,
+
+                              shape:
+                                  RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius
+                                        .circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 15),
+
+                        // =================================================
+                        // UPLOAD IMAGE
+                        // =================================================
+
+                        SizedBox(
+                          width: 260,
+                          height: 55,
+
+                          child:
+                              OutlinedButton.icon(
                             onPressed:
                                 _isLoading
                                     ? null
@@ -573,19 +878,21 @@ class _HomePageState extends State<HomePage> {
                             ),
 
                             style:
-                                ElevatedButton.styleFrom(
-                              backgroundColor:
+                                OutlinedButton
+                                    .styleFrom(
+                              foregroundColor:
                                   Colors.indigo,
 
-                              foregroundColor:
-                                  Colors.white,
+                              side:
+                                  const BorderSide(
+                                color: Colors.indigo,
+                              ),
 
                               shape:
                                   RoundedRectangleBorder(
                                 borderRadius:
-                                    BorderRadius.circular(
-                                  12,
-                                ),
+                                    BorderRadius
+                                        .circular(12),
                               ),
                             ),
                           ),
@@ -594,14 +901,15 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 15),
 
                         // =================================================
-                        // UPLOAD VIDEO BUTTON
+                        // UPLOAD VIDEO
                         // =================================================
 
                         SizedBox(
                           width: 260,
                           height: 55,
 
-                          child: OutlinedButton.icon(
+                          child:
+                              OutlinedButton.icon(
                             onPressed:
                                 _isLoading
                                     ? null
@@ -619,7 +927,8 @@ class _HomePageState extends State<HomePage> {
                             ),
 
                             style:
-                                OutlinedButton.styleFrom(
+                                OutlinedButton
+                                    .styleFrom(
                               foregroundColor:
                                   Colors.indigo,
 
@@ -631,9 +940,8 @@ class _HomePageState extends State<HomePage> {
                               shape:
                                   RoundedRectangleBorder(
                                 borderRadius:
-                                    BorderRadius.circular(
-                                  12,
-                                ),
+                                    BorderRadius
+                                        .circular(12),
                               ),
                             ),
                           ),
@@ -643,7 +951,8 @@ class _HomePageState extends State<HomePage> {
                         // SELECTED IMAGE
                         // =================================================
 
-                        if (_selectedImageName != null) ...[
+                        if (_selectedImageName !=
+                            null) ...[
                           const SizedBox(height: 20),
 
                           Text(
@@ -653,7 +962,8 @@ class _HomePageState extends State<HomePage> {
                             textAlign:
                                 TextAlign.center,
 
-                            style: const TextStyle(
+                            style:
+                                const TextStyle(
                               color: Colors.grey,
                             ),
                           ),
@@ -663,7 +973,8 @@ class _HomePageState extends State<HomePage> {
                         // SELECTED VIDEO
                         // =================================================
 
-                        if (_selectedVideoName != null) ...[
+                        if (_selectedVideoName !=
+                            null) ...[
                           const SizedBox(height: 20),
 
                           Text(
@@ -673,7 +984,8 @@ class _HomePageState extends State<HomePage> {
                             textAlign:
                                 TextAlign.center,
 
-                            style: const TextStyle(
+                            style:
+                                const TextStyle(
                               color: Colors.grey,
                             ),
                           ),
@@ -681,10 +993,7 @@ class _HomePageState extends State<HomePage> {
 
                         const SizedBox(height: 25),
 
-                        // =================================================
                         // RESULT
-                        // =================================================
-
                         _buildResultCard(),
                       ],
                     ),
@@ -696,55 +1005,114 @@ class _HomePageState extends State<HomePage> {
                   // INFORMATION CARDS
                   // =================================================
 
-                  Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                  LayoutBuilder(
+                    builder:
+                        (context, constraints) {
+                      if (constraints.maxWidth <
+                          700) {
+                        return Column(
+                          children: [
+                            _InfoCard(
+                              icon:
+                                  Icons.analytics,
+                              title:
+                                  'Detection Status',
+                              value:
+                                  _prediction ==
+                                          null
+                                      ? 'Ready'
+                                      : 'Completed',
+                              description:
+                                  'The detection system is ready '
+                                  'for analysis.',
+                            ),
 
-                    children: [
-                      Expanded(
-                        child: _InfoCard(
-                          icon: Icons.analytics,
-                          title: 'Detection Status',
+                            const SizedBox(
+                              height: 20,
+                            ),
 
-                          value:
-                              _prediction == null
-                                  ? 'Ready'
-                                  : 'Completed',
+                            _InfoCard(
+                              icon:
+                                  Icons.smart_toy,
+                              title: 'AI Model',
+                              value:
+                                  'CanineCue Model',
+                              description:
+                                  'Computer vision model for '
+                                  'dog behavior analysis.',
+                            ),
 
-                          description:
-                              'The detection system is ready '
-                              'for analysis.',
-                        ),
-                      ),
+                            const SizedBox(
+                              height: 20,
+                            ),
 
-                      const SizedBox(width: 20),
+                            _InfoCard(
+                              icon: Icons.shield,
+                              title: 'Purpose',
+                              value: 'Safety',
+                              description:
+                                  'Helps identify potentially '
+                                  'aggressive behavior.',
+                            ),
+                          ],
+                        );
+                      }
 
-                      Expanded(
-                        child: _InfoCard(
-                          icon: Icons.smart_toy,
-                          title: 'AI Model',
-                          value: 'CanineCue Model',
+                      return Row(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _InfoCard(
+                              icon:
+                                  Icons.analytics,
+                              title:
+                                  'Detection Status',
+                              value:
+                                  _prediction ==
+                                          null
+                                      ? 'Ready'
+                                      : 'Completed',
+                              description:
+                                  'The detection system is ready '
+                                  'for analysis.',
+                            ),
+                          ),
 
-                          description:
-                              'Computer vision model for '
-                              'dog behavior analysis.',
-                        ),
-                      ),
+                          const SizedBox(
+                            width: 20,
+                          ),
 
-                      const SizedBox(width: 20),
+                          Expanded(
+                            child: _InfoCard(
+                              icon:
+                                  Icons.smart_toy,
+                              title: 'AI Model',
+                              value:
+                                  'CanineCue Model',
+                              description:
+                                  'Computer vision model for '
+                                  'dog behavior analysis.',
+                            ),
+                          ),
 
-                      Expanded(
-                        child: _InfoCard(
-                          icon: Icons.shield,
-                          title: 'Purpose',
-                          value: 'Safety',
+                          const SizedBox(
+                            width: 20,
+                          ),
 
-                          description:
-                              'Helps identify potentially '
-                              'aggressive behavior.',
-                        ),
-                      ),
-                    ],
+                          Expanded(
+                            child: _InfoCard(
+                              icon: Icons.shield,
+                              title: 'Purpose',
+                              value: 'Safety',
+                              description:
+                                  'Helps identify potentially '
+                                  'aggressive behavior.',
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
 
                   const SizedBox(height: 40),
@@ -756,10 +1124,12 @@ class _HomePageState extends State<HomePage> {
                   Container(
                     width: double.infinity,
 
-                    padding: const EdgeInsets.all(25),
+                    padding:
+                        const EdgeInsets.all(25),
 
                     decoration: BoxDecoration(
-                      color: Colors.indigo,
+                      color: Colors.white,
+
                       borderRadius:
                           BorderRadius.circular(18),
                     ),
@@ -771,47 +1141,30 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         Text(
                           'About CanineCue',
-
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 23,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 24,
+                            fontWeight:
+                                FontWeight.bold,
                           ),
                         ),
 
                         SizedBox(height: 10),
 
                         Text(
-                          'CanineCue is a dog aggression detection '
-                          'system designed to analyze visual behavior '
-                          'and identify potentially aggressive actions '
-                          'using artificial intelligence and '
-                          'computer vision.',
-
+                          'CanineCue uses AI-powered computer '
+                          'vision to analyze dog behavior and '
+                          'identify potentially aggressive '
+                          'activity.',
                           style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 15,
-                            height: 1.5,
+                            fontSize: 16,
+                            color: Colors.grey,
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 30),
-
-                  const Center(
-                    child: Text(
-                      'CanineCue • Dog Aggression Detection System',
-
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -822,9 +1175,9 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// =============================================================
+// =========================================================
 // RESULT ROW
-// =============================================================
+// =========================================================
 
 class _ResultRow extends StatelessWidget {
   final String label;
@@ -847,11 +1200,10 @@ class _ResultRow extends StatelessWidget {
 
         children: [
           SizedBox(
-            width: 160,
+            width: 150,
 
             child: Text(
               label,
-
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
               ),
@@ -859,7 +1211,9 @@ class _ResultRow extends StatelessWidget {
           ),
 
           Expanded(
-            child: Text(value),
+            child: Text(
+              value,
+            ),
           ),
         ],
       ),
@@ -867,9 +1221,9 @@ class _ResultRow extends StatelessWidget {
   }
 }
 
-// =============================================================
+// =========================================================
 // INFORMATION CARD
-// =============================================================
+// =========================================================
 
 class _InfoCard extends StatelessWidget {
   final IconData icon;
@@ -887,18 +1241,22 @@ class _InfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      width: double.infinity,
+
+      padding: const EdgeInsets.all(25),
 
       decoration: BoxDecoration(
         color: Colors.white,
+
         borderRadius:
-            BorderRadius.circular(16),
+            BorderRadius.circular(18),
 
         boxShadow: [
           BoxShadow(
             blurRadius: 12,
-            color:
-                Colors.black.withOpacity(0.05),
+            spreadRadius: 1,
+            color: Colors.black
+                .withOpacity(0.05),
           ),
         ],
       ),
@@ -911,17 +1269,16 @@ class _InfoCard extends StatelessWidget {
           Icon(
             icon,
             color: Colors.indigo,
-            size: 32,
+            size: 35,
           ),
 
           const SizedBox(height: 15),
 
           Text(
             title,
-
             style: const TextStyle(
               color: Colors.grey,
-              fontSize: 14,
+              fontSize: 15,
             ),
           ),
 
@@ -929,9 +1286,8 @@ class _InfoCard extends StatelessWidget {
 
           Text(
             value,
-
             style: const TextStyle(
-              fontSize: 19,
+              fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -940,11 +1296,8 @@ class _InfoCard extends StatelessWidget {
 
           Text(
             description,
-
             style: const TextStyle(
               color: Colors.grey,
-              fontSize: 13,
-              height: 1.4,
             ),
           ),
         ],
