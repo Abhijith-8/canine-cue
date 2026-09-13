@@ -812,7 +812,7 @@ class _HomePageState extends State<HomePage> {
                           blurRadius: 15,
                           spreadRadius: 2,
                           color: Colors.black
-                              .withOpacity(0.06),
+                              .withValues(alpha: 0.06),
                         ),
                       ],
                     ),
@@ -1303,7 +1303,7 @@ class _InfoCard extends StatelessWidget {
             blurRadius: 12,
             spreadRadius: 1,
             color: Colors.black
-                .withOpacity(0.05),
+                .withValues(alpha: 0.05),
           ),
         ],
       ),
