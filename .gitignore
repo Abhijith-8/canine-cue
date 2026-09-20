@@ -1,1 +1,5 @@
 __pycache__/
+
+# Temporary ONNX model files
+checkpoints/caninecue_resnet18.onnx.data
+frontend/flutter_app/caninecue_resnet18.onnx
