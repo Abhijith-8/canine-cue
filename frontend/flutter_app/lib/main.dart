@@ -1,12 +1,11 @@
-import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
-import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter/services.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -145,10 +144,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
   final OnDeviceDogDetector _detector = OnDeviceDogDetector();
-
-  // Video detection still uses the existing backend until local video
-  // frame extraction is added. Photo detection is fully on-device.
-  static const String backendUrl = 'http://127.0.0.1:8000';
+  static const MethodChannel _videoChannel = MethodChannel('caninecue/video');
 
   @override
   void initState() {
@@ -320,92 +316,112 @@ class _HomePageState extends State<HomePage> {
   // RECORD VIDEO USING PHONE CAMERA
   // =========================================================
 
+  Future<Map<String, dynamic>> _analyzeVideoOnDevice(String videoPath) async {
+    final frames = await _videoChannel.invokeMethod<List<dynamic>>(
+      'extractFrames',
+      {
+        'videoPath': videoPath,
+        'frameCount': 30,
+      },
+    );
+
+    if (frames == null || frames.isEmpty) {
+      throw Exception('No frames were extracted from the video.');
+    }
+
+    int aggressiveFrames = 0;
+    int calmFrames = 0;
+    double confidenceSum = 0.0;
+    double probabilitySum = 0.0;
+
+    for (int i = 0; i < frames.length; i++) {
+      final dynamic frame = frames[i];
+      final bytes = frame is Uint8List
+          ? frame
+          : Uint8List.fromList(List<int>.from(frame as List));
+
+      final data = await _detector.predict(bytes);
+      final prediction = data['prediction'] as String;
+      final confidence = (data['confidence'] as num).toDouble();
+      final probability =
+          (data['prob_aggressive'] as num).toDouble();
+
+      if (prediction == 'AGGRESSIVE') {
+        aggressiveFrames++;
+      } else {
+        calmFrames++;
+      }
+
+      confidenceSum += confidence;
+      probabilitySum += probability;
+
+      if (mounted) {
+        setState(() {
+          _analyzedFrames = i + 1;
+        });
+      }
+    }
+
+    final analyzedFrames = aggressiveFrames + calmFrames;
+    final aggressivePercentage =
+        (aggressiveFrames / analyzedFrames) * 100.0;
+    final finalPrediction = aggressiveFrames > calmFrames
+        ? 'AGGRESSIVE'
+        : 'CALM';
+    final averageConfidence = confidenceSum / analyzedFrames;
+    final averageProbability = probabilitySum / analyzedFrames;
+
+    return {
+      'prediction': finalPrediction,
+      'confidence': averageConfidence,
+      'prob_aggressive': averageProbability,
+      'aggressive_frames': aggressiveFrames,
+      'calm_frames': calmFrames,
+      'analyzed_frames': analyzedFrames,
+      'aggressive_percentage': aggressivePercentage,
+    };
+  }
+
+  // =========================================================
+  // RECORD VIDEO USING PHONE CAMERA - ON DEVICE
+  // =========================================================
+
   Future<void> _recordVideo() async {
     try {
       final XFile? video = await _picker.pickVideo(
         source: ImageSource.camera,
       );
 
-      if (video == null) {
-        return;
-      }
+      if (video == null) return;
 
       setState(() {
         _selectedVideoName = video.name;
         _selectedImageName = null;
-
         _resetResult();
-
         _isLoading = true;
       });
 
-      final bytes = await video.readAsBytes();
+      final data = await _analyzeVideoOnDevice(video.path);
 
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$backendUrl/scan/video'),
-      );
-
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: video.name,
-        ),
-      );
-
-      final response = await request.send();
-
-      final responseBody =
-          await response.stream.bytesToString();
-
-      if (response.statusCode != 200) {
-        throw Exception(responseBody);
-      }
-
-      final data = json.decode(responseBody);
-
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
-        _prediction = data['prediction'];
-
-        _confidence =
-            (data['confidence'] as num).toDouble();
-
-        _aggressiveFrames =
-            (data['aggressive_frames'] as num).toInt();
-
-        _calmFrames =
-            (data['calm_frames'] as num).toInt();
-
-        _analyzedFrames =
-            (data['analyzed_frames'] as num).toInt();
-
+        _prediction = data['prediction'] as String;
+        _confidence = (data['confidence'] as num).toDouble();
+        _aggressiveFrames = (data['aggressive_frames'] as num).toInt();
+        _calmFrames = (data['calm_frames'] as num).toInt();
+        _analyzedFrames = (data['analyzed_frames'] as num).toInt();
         _aggressivePercentage =
-            (data['aggressive_percentage'] as num)
-                .toDouble();
-
-        _durationSeconds =
-            (data['duration_seconds'] as num)
-                .toDouble();
-
+            (data['aggressive_percentage'] as num).toDouble();
+        _durationSeconds = null;
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
-
-      _showError(
-        'Video camera error: $e',
-      );
+      _showError('Video camera error: $e');
     }
   }
 
@@ -451,98 +467,48 @@ class _HomePageState extends State<HomePage> {
   // UPLOAD VIDEO FROM GALLERY
   // =========================================================
 
+  // =========================================================
+  // UPLOAD VIDEO FROM GALLERY - ON DEVICE
+  // =========================================================
+
   Future<void> _pickVideo() async {
     try {
       final XFile? video = await _picker.pickVideo(
         source: ImageSource.gallery,
       );
 
-      if (video == null) {
-        return;
-      }
+      if (video == null) return;
 
       setState(() {
         _selectedVideoName = video.name;
         _selectedImageName = null;
-
         _resetResult();
-
         _isLoading = true;
       });
 
-      final bytes = await video.readAsBytes();
+      final data = await _analyzeVideoOnDevice(video.path);
 
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$backendUrl/scan/video'),
-      );
-
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: video.name,
-        ),
-      );
-
-      final response = await request.send();
-
-      final responseBody =
-          await response.stream.bytesToString();
-
-      if (response.statusCode != 200) {
-        throw Exception(responseBody);
-      }
-
-      final data = json.decode(responseBody);
-
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
-        _prediction = data['prediction'];
-
-        _confidence =
-            (data['confidence'] as num).toDouble();
-
-        _aggressiveFrames =
-            (data['aggressive_frames'] as num).toInt();
-
-        _calmFrames =
-            (data['calm_frames'] as num).toInt();
-
-        _analyzedFrames =
-            (data['analyzed_frames'] as num).toInt();
-
+        _prediction = data['prediction'] as String;
+        _confidence = (data['confidence'] as num).toDouble();
+        _aggressiveFrames = (data['aggressive_frames'] as num).toInt();
+        _calmFrames = (data['calm_frames'] as num).toInt();
+        _analyzedFrames = (data['analyzed_frames'] as num).toInt();
         _aggressivePercentage =
-            (data['aggressive_percentage'] as num)
-                .toDouble();
-
-        _durationSeconds =
-            (data['duration_seconds'] as num)
-                .toDouble();
-
+            (data['aggressive_percentage'] as num).toDouble();
+        _durationSeconds = null;
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
-
-      _showError(
-        'Video error: $e',
-      );
+      _showError('Video detection error: $e');
     }
   }
-
-  // =========================================================
-  // ERROR MESSAGE
-  // =========================================================
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
