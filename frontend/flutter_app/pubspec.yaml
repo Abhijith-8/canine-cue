@@ -24,6 +24,7 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
 
@@ -47,3 +48,7 @@ flutter:
   # in this "flutter" section. Each entry in this list should have a
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for fonts.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/caninecue_logo.png"
