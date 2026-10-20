@@ -57,3 +57,5 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/caninecue_logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
