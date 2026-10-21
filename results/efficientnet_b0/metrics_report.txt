@@ -1,0 +1,8 @@
+              precision    recall  f1-score   support
+
+        calm       0.95      0.97      0.96       153
+  aggressive       0.96      0.93      0.95       112
+
+    accuracy                           0.95       265
+   macro avg       0.96      0.95      0.95       265
+weighted avg       0.95      0.95      0.95       265

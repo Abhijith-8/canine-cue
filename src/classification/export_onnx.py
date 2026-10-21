@@ -7,7 +7,7 @@ def export_onnx(checkpoint_path: str, output_path: str):
     device = torch.device("cpu")  # export on CPU for compatibility
 
     # Build same architecture used in training
-    model = models.resnet18(weights=None)
+    model = models.resnet50(weights=None)
     model.fc = torch.nn.Linear(model.fc.in_features, 1)  # binary: 1 output
     
     checkpoint = torch.load(checkpoint_path, map_location=device)

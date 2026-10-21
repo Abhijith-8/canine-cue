@@ -366,12 +366,12 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 10),
               if (_isOnline) ...[
-                _BottomSheetButton(
-                  icon: Icons.videocam_rounded,
-                  title: 'Record Video',
-                  onTap: () { Navigator.pop(context); _recordVideo(); },
-                ),
-                const SizedBox(height: 10),
+                // _BottomSheetButton(
+                //   icon: Icons.videocam_rounded,
+                //   title: 'Record Video',
+                //   onTap: () { Navigator.pop(context); _recordVideo(); },
+                // ),
+                // const SizedBox(height: 10),
                 _BottomSheetButton(
                   icon: Icons.stream_rounded,
                   title: 'Live Camera Feed',
@@ -838,34 +838,34 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 10),
           Row(
-            children: [
-              Expanded(
-                child: _ActionButton(
-                  icon: Icons.photo_rounded,
-                  label: 'Photo',
-                  onPressed: _isLoading ? null : _pickImage,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _ActionButton(
-                  icon: Icons.video_library_rounded,
-                  label: 'Video',
-                  onPressed: _isLoading ? null : _pickVideo,
-                ),
-              ),
-              if (_isOnline) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _ActionButton(
-                    icon: Icons.stream_rounded,
-                    label: 'Live',
-                    onPressed: _isLoading ? null : _openLiveCamera,
-                  ),
-                ),
-              ],
-            ],
-          ),
+  children: [
+    Expanded(
+      child: _ActionButton(
+        icon: Icons.photo_rounded,
+        label: 'Photo',
+        onPressed: _isLoading ? null : _pickImage,
+      ),
+    ),
+    if (_isOnline) ...[
+      const SizedBox(width: 10),
+      Expanded(
+        child: _ActionButton(
+          icon: Icons.video_library_rounded,
+          label: 'Video',
+          onPressed: _isLoading ? null : _pickVideo,
+        ),
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: _ActionButton(
+          icon: Icons.stream_rounded,
+          label: 'Live',
+          onPressed: _isLoading ? null : _openLiveCamera,
+        ),
+      ),
+    ],
+  ],
+),
           if (_selectedImageName != null)
             _SelectedFile(icon: Icons.image_rounded, name: _selectedImageName!),
           if (_selectedVideoName != null)

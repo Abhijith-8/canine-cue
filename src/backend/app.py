@@ -26,7 +26,8 @@ from src.pipeline.inference_pipeline import InferencePipeline
 app = Flask(__name__)
 CORS(app)
 
-CHECKPOINT = "checkpoints/resnet18_calm_aggressive_v3.pt"
+# CHECKPOINT = "checkpoints/resnet18_calm_aggressive_v3.pt"
+CHECKPOINT = "checkpoints/resnet50_v1.pt"
 YOLO_WEIGHTS = "yolov8s.pt"
 
 print("[Backend] Loading pipeline...")
