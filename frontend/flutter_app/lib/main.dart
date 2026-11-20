@@ -735,7 +735,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHero() {
     final subtitle = _isOnline
-        ? 'Online mode — YOLO detection + ResNet18 classification via backend.'
+        ? 'Online mode — YOLO detection + ResNet50 classification via backend.'
         : 'Offline mode — on-device AI, no internet required.';
 
     return Column(
@@ -803,8 +803,8 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 2),
                     Text(
                       _isOnline
-                          ? 'YOLO + ResNet18 via server'
-                          : 'On-device ResNet18',
+                          ? 'YOLO + ResNet50 via server'
+                          : 'On-device ResNet50',
                       style: const TextStyle(
                           color: Colors.white54, fontSize: 12),
                     ),
@@ -1113,13 +1113,13 @@ class _HomePageState extends State<HomePage> {
             ('02', Icons.manage_search_rounded, 'Detect',
                 'YOLOv8 locates the dog and crops it for precise analysis.'),
             ('03', Icons.shield_rounded, 'Classify',
-                'ResNet18 classifies the cropped region and returns a risk level.'),
+                'ResNet50 classifies the cropped region and returns a risk level.'),
           ]
         : [
             ('01', Icons.camera_alt_rounded, 'Capture',
                 'Point your phone at a dog or choose a saved photo or video.'),
             ('02', Icons.memory_rounded, 'Analyze',
-                'On-device ResNet18 model runs entirely on your phone.'),
+                'On-device ResNet50 model runs entirely on your phone.'),
             ('03', Icons.shield_rounded, 'Understand',
                 'Get a calm or aggressive result with confidence score.'),
           ];
